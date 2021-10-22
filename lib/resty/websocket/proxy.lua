@@ -20,6 +20,14 @@ local _PROXY_STATES = {
     ESTABLISHED = 1,
     CLOSING = 2,
 }
+local _TYP2OPCODE = {
+    ["continuation"] = 0x0,
+    ["text"] = 0x1,
+    ["binary"] = 0x2,
+    ["close"] = 0x8,
+    ["ping"] = 0x9,
+    ["pong"] = 0xa,
+}
 
 
 local _M     = {
@@ -144,45 +152,19 @@ local function forwarder(self, role)
 
         -- forward
 
-        if typ == "close" then
-            local code = err
+        local fin = err ~= "again"
+        local opcode = _TYP2OPCODE[typ]
 
-            self:dd("\n  status code: ", code)
-
-            local bytes, err = peer_ws:send_close(code, data)
-            if not bytes then
-                log(ngx.ERR, "failed to forward close frame: ", err)
-            end
-
-            -- continue
-
-        elseif typ == "ping" then
-            local bytes, err = peer_ws:send_ping()
-            if not bytes then
-                log(ngx.ERR, "failed to forward ping frame: ", err)
-            end
-
-            -- continue
-
-        elseif typ == "pong" then
-            local bytes, err = peer_ws:send_pong(data)
-            if not bytes then
-                log(ngx.ERR, "failed to forward pong frame: ", err)
-            end
-
-        elseif typ == "text" then
-            local bytes, err = peer_ws:send_text(data)
-            if not bytes then
-                log(ngx.ERR, "failed to forward text frame: ", err)
-            end
-
-            -- continue
-
-        elseif typ == nil then
-            -- continue
+        if opcode == nil then
+            log(ngx.EMERG, "NYI - unknown frame type: ", typ,
+                           " (dropping frame)")
 
         else
-            log(ngx.EMERG, "NYI - frame type \"", typ, "\"")
+            local bytes, err = peer_ws:send_frame(fin, opcode, data)
+            if not bytes then
+                log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
+                                 peer_role, err))
+            end
         end
 
         yield(self)
