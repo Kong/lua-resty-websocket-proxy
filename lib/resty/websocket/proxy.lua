@@ -126,6 +126,24 @@ local function forwarder(self, role)
             end
         end
 
+        -- special flags
+
+        local code
+        local fin = err ~= "again"
+        local opcode = _TYP2OPCODE[typ]
+
+        if opcode == nil then
+            log(ngx.EMERG, "NYI - unknown frame type: ", typ,
+                           " (dropping connection)")
+            return
+        end
+
+        if typ == "close" then
+            code = err
+        end
+
+        -- debug
+
         if self.debug and (not err or typ == "close") then
             local arrow
 
@@ -142,29 +160,37 @@ local function forwarder(self, role)
                               .. "[...]"
             end
 
+            local extra
+            if code then
+                extra = fmt("\n  code: %d", code)
+            end
+
             self:dd(fmt("\n[frame] downstream %s resty.proxy %s upstream\n" ..
                         "  type: \"%s\"\n" ..
-                        "  payload: %s (len: %d)",
+                        "  payload: %s (len: %d)%s",
                         arrow, arrow,
                         typ,
-                        fmt("%q", payload), data and #data or 0))
+                        fmt("%q", payload), data and #data or 0, extra or ""))
         end
 
         -- forward
 
-        local fin = err ~= "again"
-        local opcode = _TYP2OPCODE[typ]
+        local bytes
 
-        if opcode == nil then
-            log(ngx.EMERG, "NYI - unknown frame type: ", typ,
-                           " (dropping frame)")
+        if typ == "close" then
+            log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
+                          data)
+
+            bytes, err = peer_ws:send_close(code, data)
 
         else
-            local bytes, err = peer_ws:send_frame(fin, opcode, data)
-            if not bytes then
-                log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
-                                 peer_role, err))
-            end
+            bytes, err = peer_ws:send_frame(fin, opcode, data)
+        end
+
+        if not bytes then
+            log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
+                             peer_role, err))
+            -- continue
         end
 
         yield(self)
@@ -191,7 +217,7 @@ function _M:execute()
 
     local ok, res = ngx.thread.wait(self.co_client, self.co_server)
     if not ok then
-        log(ngx.WARN, "failed to wait for threads: ", res)
+        log(ngx.ERR, "failed to wait for threads: ", res)
 
     elseif res == "downstream" then
         assert(self.state == _PROXY_STATES.CLOSING)
@@ -213,6 +239,8 @@ function _M:execute()
     end
 
     self.state = _PROXY_STATES.INIT
+
+    return true
 end
 
 
