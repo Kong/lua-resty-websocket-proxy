@@ -1,6 +1,3 @@
-[submodule "lua-resty-websocket"]
-	path = lua-resty-websocket
-	url = git@github.com:openresty/lua-resty-websocket.git
 [submodule "misc/lua-resty-websocket"]
 	path = misc/lua-resty-websocket
 	url = git@github.com:openresty/lua-resty-websocket.git

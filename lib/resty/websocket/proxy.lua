@@ -13,13 +13,13 @@ local find = string.find
 local log = ngx.log
 
 
-local _DEFAULT_RECV_TIMEOUT = 1 -- ms
 local _DEBUG_PAYLOAD_MAX_LEN = 24
 local _PROXY_STATES = {
     INIT = 0,
     ESTABLISHED = 1,
     CLOSING = 2,
 }
+
 local _TYP2OPCODE = {
     ["continuation"] = 0x0,
     ["text"] = 0x1,
@@ -50,10 +50,6 @@ function _M.new(opts)
         error("opts.upstream must be a string", 2)
     end
 
-    if opts.recv_timeout ~= nil and type(opts.recv_timeout) ~= "number" then
-        error("opts.recv_timeout must be a number", 2)
-    end
-
     local server, err = ws_server:new()
     if not server then
         return nil, "failed to create server: " .. err
@@ -69,7 +65,6 @@ function _M.new(opts)
         client = client,
         upstream = opts.upstream,
         debug = opts.debug,
-        recv_timeout = opts.recv_timeout or _DEFAULT_RECV_TIMEOUT,
         state = _PROXY_STATES.INIT,
         co_client = nil,
         co_server = nil,
@@ -107,8 +102,6 @@ local function forwarder(self, role)
         if self.state == _PROXY_STATES.CLOSING then
             return
         end
-
-        --self_ws:set_timeout(self.recv_timeout)
 
         local data, typ, err = self_ws:recv_frame()
         if not data then
