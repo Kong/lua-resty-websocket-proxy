@@ -4,7 +4,9 @@ Reverse-proxying of websocket frames.
 
 ### TODO
 
-- [ ] Fragmented messages support
+- [ ] Fragmented messages buffering limits
+- [ ] On frame proxying callbacks (in which users can execute arbitrary code)
+- [ ] Performance analysis
 
 ### Limitations
 

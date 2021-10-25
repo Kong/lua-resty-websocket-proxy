@@ -1,10 +1,13 @@
 local new_tab = require "table.new"
+local clear_tab = require "table.clear"
 local ws_client = require "resty.websocket.client"
 local ws_server = require "resty.websocket.server"
 
 
 local type = type
 local setmetatable = setmetatable
+local insert = table.insert
+local concat = table.concat
 local yield = coroutine.yield
 local fmt = string.format
 local sub = string.sub
@@ -69,6 +72,7 @@ function _M.new(opts)
         client = client,
         upstream = opts.upstream,
         recv_timeout = opts.recv_timeout,
+        aggregate_fragments = opts.aggregate_fragments,
         debug = opts.debug,
         state = _PROXY_STATES.INIT,
         co_client = nil,
@@ -86,7 +90,9 @@ function _M:dd(...)
 end
 
 
-local function forwarder(self, role)
+local function forwarder(self, ctx)
+    local role = ctx.role
+    local buf = ctx.buf
     local self_ws, peer_ws
 
     assert(self.state == _PROXY_STATES.ESTABLISHED)
@@ -133,8 +139,12 @@ local function forwarder(self, role)
         -- special flags
 
         local code
-        local fin = err ~= "again"
         local opcode = _TYP2OPCODE[typ]
+        local fin = true
+        if err == "again" then
+            fin = false
+            err = nil
+        end
 
         if typ then
             if not opcode then
@@ -153,51 +163,74 @@ local function forwarder(self, role)
                 local arrow
 
                 if typ == "close" then
-                    arrow = role == "upstream" and "--x" or "x--"
+                    arrow = role == "client" and "--x" or "x--"
 
                 else
-                    arrow = role == "upstream" and "-->" or "<--"
+                    arrow = role == "client" and "-->" or "<--"
                 end
 
                 local payload = data and gsub(data, "\n", "\\n") or ""
                 if #payload > _DEBUG_PAYLOAD_MAX_LEN then
-                    payload = sub(payload, 1, _DEBUG_PAYLOAD_MAX_LEN)
-                                  .. "[...]"
+                    payload = sub(payload, 1, _DEBUG_PAYLOAD_MAX_LEN) .. "[...]"
                 end
 
-                local extra
+                local extra = ""
                 if code then
                     extra = fmt("\n  code: %d", code)
                 end
 
                 self:dd(fmt("\n[frame] downstream %s resty.proxy %s upstream\n" ..
                             "  type: \"%s\"\n" ..
-                            "  payload: %s (len: %d)%s",
+                            "  payload: %s (len: %d)%s\n" ..
+                            "  fin: %s",
                             arrow, arrow,
                             typ,
-                            fmt("%q", payload), data and #data or 0, extra or ""))
+                            fmt("%q", payload), data and #data or 0, extra,
+                            fin))
+            end
+
+            local bytes
+            local forward = true
+
+            -- fragmentation
+
+            if self.aggregate_fragments then
+                if not fin then
+                    self:dd(role, " received fragmented frame, buffering")
+                    insert(buf, data)
+                    forward = false
+                    -- continue
+
+                elseif #buf > 0 then
+                    self:dd(role, " received last fragmented frame, forwarding")
+                    insert(buf, data)
+                    data = concat(buf, "")
+                    clear_tab(buf)
+                end
             end
 
             -- forward
 
-            local bytes
+            if forward then
+                if typ == "close" then
+                    log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
+                                  data)
 
-            if typ == "close" then
-                log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
-                              data)
+                    bytes, err = peer_ws:send_close(code, data)
 
-                bytes, err = peer_ws:send_close(code, data)
+                else
+                    bytes, err = peer_ws:send_frame(fin, opcode, data)
+                end
 
-            else
-                bytes, err = peer_ws:send_frame(fin, opcode, data)
-            end
-
-            if not bytes then
-                log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
-                                 role, err))
-                -- continue
+                if not bytes then
+                    log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
+                                     role, err))
+                    -- continue
+                end
             end
         end
+
+        self:dd(role, " yielding")
 
         yield(self)
     end
@@ -218,8 +251,15 @@ function _M:execute()
 
     self:dd("connected to \"", self.upstream, "\" upstream")
 
-    self.co_client = ngx.thread.spawn(forwarder, self, "client")
-    self.co_server = ngx.thread.spawn(forwarder, self, "upstream")
+    self.co_client = ngx.thread.spawn(forwarder, self, {
+        role = "client",
+        buf = new_tab(0, 0),
+    })
+
+    self.co_server = ngx.thread.spawn(forwarder, self, {
+        role = "upstream",
+        buf = new_tab(0, 0),
+    })
 
     local ok, res = ngx.thread.wait(self.co_client, self.co_server)
     if not ok then
@@ -228,7 +268,7 @@ function _M:execute()
     elseif res == "client" then
         assert(self.state == _PROXY_STATES.CLOSING)
 
-        self:dd("killing co_server thread")
+        self:dd(res, " thread terminated, killing server thread")
 
         ngx.thread.kill(self.co_server)
 
@@ -239,7 +279,7 @@ function _M:execute()
     elseif res == "upstream" then
         assert(self.state == _PROXY_STATES.CLOSING)
 
-        self:dd("killing co_client thread")
+        self:dd(res, " thread terminated, killing client thread")
 
         ngx.thread.kill(self.co_client)
     end
