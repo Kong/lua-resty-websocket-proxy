@@ -50,6 +50,10 @@ function _M.new(opts)
         error("opts.upstream must be a string", 2)
     end
 
+    if opts.recv_timeout ~= nil and type(opts.recv_timeout) ~= "number" then
+        error("opts.recv_timeout must be a number", 2)
+    end
+
     local server, err = ws_server:new()
     if not server then
         return nil, "failed to create server: " .. err
@@ -64,6 +68,7 @@ function _M.new(opts)
         server = server,
         client = client,
         upstream = opts.upstream,
+        recv_timeout = opts.recv_timeout,
         debug = opts.debug,
         state = _PROXY_STATES.INIT,
         co_client = nil,
@@ -82,20 +87,18 @@ end
 
 
 local function forwarder(self, role)
-    local self_ws, peer_ws, peer_role
+    local self_ws, peer_ws
 
     assert(self.state == _PROXY_STATES.ESTABLISHED)
 
-    if role == "upstream" then
+    if role == "client" then
         self_ws = self.server
         peer_ws = self.client
-        peer_role = "downstream"
 
     else
-        -- role == "downstream"
+        -- role == "upstream"
         self_ws = self.client
         peer_ws = self.server
-        peer_role = "upstream"
     end
 
     while true do
@@ -103,18 +106,26 @@ local function forwarder(self, role)
             return
         end
 
+        if self.recv_timeout then
+            self_ws:set_timeout(self.recv_timeout)
+        end
+
+        self:dd(role, " receiving frame...")
+
         local data, typ, err = self_ws:recv_frame()
         if not data then
             if find(err, "timeout", 1, true) then
+                log(ngx.INFO, fmt("timeout receiving frame from %s, reopening",
+                                  role))
                 -- continue
 
             elseif find(err, "closed", 1, true) then
                 self.state = _PROXY_STATES.CLOSING
-                return peer_role
+                return role
 
             else
-                log(ngx.ERR, fmt("failed receiving a frame from %s: %s",
-                                 peer_role, err))
+                log(ngx.ERR, fmt("failed receiving frame from %s: %s",
+                                 role, err))
                 -- continue
             end
         end
@@ -125,65 +136,67 @@ local function forwarder(self, role)
         local fin = err ~= "again"
         local opcode = _TYP2OPCODE[typ]
 
-        if opcode == nil then
-            log(ngx.EMERG, "NYI - unknown frame type: ", typ,
-                           " (dropping connection)")
-            return
-        end
-
-        if typ == "close" then
-            code = err
-        end
-
-        -- debug
-
-        if self.debug and (not err or typ == "close") then
-            local arrow
+        if typ then
+            if not opcode then
+                log(ngx.EMERG, "NYI - unknown frame type: ", typ,
+                               " (dropping connection)")
+                return
+            end
 
             if typ == "close" then
-                arrow = role == "upstream" and "--x" or "x--"
+                code = err
+            end
+
+            -- debug
+
+            if self.debug and (not err or typ == "close") then
+                local arrow
+
+                if typ == "close" then
+                    arrow = role == "upstream" and "--x" or "x--"
+
+                else
+                    arrow = role == "upstream" and "-->" or "<--"
+                end
+
+                local payload = data and gsub(data, "\n", "\\n") or ""
+                if #payload > _DEBUG_PAYLOAD_MAX_LEN then
+                    payload = sub(payload, 1, _DEBUG_PAYLOAD_MAX_LEN)
+                                  .. "[...]"
+                end
+
+                local extra
+                if code then
+                    extra = fmt("\n  code: %d", code)
+                end
+
+                self:dd(fmt("\n[frame] downstream %s resty.proxy %s upstream\n" ..
+                            "  type: \"%s\"\n" ..
+                            "  payload: %s (len: %d)%s",
+                            arrow, arrow,
+                            typ,
+                            fmt("%q", payload), data and #data or 0, extra or ""))
+            end
+
+            -- forward
+
+            local bytes
+
+            if typ == "close" then
+                log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
+                              data)
+
+                bytes, err = peer_ws:send_close(code, data)
 
             else
-                arrow = role == "upstream" and "-->" or "<--"
+                bytes, err = peer_ws:send_frame(fin, opcode, data)
             end
 
-            local payload = data and gsub(data, "\n", "\\n") or ""
-            if #payload > _DEBUG_PAYLOAD_MAX_LEN then
-                payload = sub(payload, 1, _DEBUG_PAYLOAD_MAX_LEN)
-                              .. "[...]"
+            if not bytes then
+                log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
+                                 role, err))
+                -- continue
             end
-
-            local extra
-            if code then
-                extra = fmt("\n  code: %d", code)
-            end
-
-            self:dd(fmt("\n[frame] downstream %s resty.proxy %s upstream\n" ..
-                        "  type: \"%s\"\n" ..
-                        "  payload: %s (len: %d)%s",
-                        arrow, arrow,
-                        typ,
-                        fmt("%q", payload), data and #data or 0, extra or ""))
-        end
-
-        -- forward
-
-        local bytes
-
-        if typ == "close" then
-            log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
-                          data)
-
-            bytes, err = peer_ws:send_close(code, data)
-
-        else
-            bytes, err = peer_ws:send_frame(fin, opcode, data)
-        end
-
-        if not bytes then
-            log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
-                             peer_role, err))
-            -- continue
         end
 
         yield(self)
@@ -205,14 +218,14 @@ function _M:execute()
 
     self:dd("connected to \"", self.upstream, "\" upstream")
 
-    self.co_client = ngx.thread.spawn(forwarder, self, "downstream")
+    self.co_client = ngx.thread.spawn(forwarder, self, "client")
     self.co_server = ngx.thread.spawn(forwarder, self, "upstream")
 
     local ok, res = ngx.thread.wait(self.co_client, self.co_server)
     if not ok then
         log(ngx.ERR, "failed to wait for threads: ", res)
 
-    elseif res == "downstream" then
+    elseif res == "client" then
         assert(self.state == _PROXY_STATES.CLOSING)
 
         self:dd("killing co_server thread")
