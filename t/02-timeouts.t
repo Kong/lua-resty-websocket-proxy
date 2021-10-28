@@ -59,7 +59,10 @@ __DATA__
                 return ngx.exit(444)
             end
 
-            wb:execute()
+            local done, err = wb:execute()
+            if not done then
+                ngx.log(ngx.ERR, "failed proxying: ", err)
+            end
         }
     }
 
@@ -134,7 +137,10 @@ qr/.*?timeout receiving frame from client, reopening.*
                 return ngx.exit(444)
             end
 
-            wb:execute()
+            local done, err = wb:execute()
+            if not done then
+                ngx.log(ngx.ERR, "failed proxying: ", err)
+            end
         }
     }
 

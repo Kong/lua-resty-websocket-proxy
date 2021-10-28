@@ -53,6 +53,10 @@ function _M.new(opts)
         error("opts.upstream must be a string", 2)
     end
 
+    if opts.on_frame ~= nil and type(opts.on_frame) ~= "function" then
+        error("opts.on_frame must be a function", 2)
+    end
+
     if opts.recv_timeout ~= nil and type(opts.recv_timeout) ~= "number" then
         error("opts.recv_timeout must be a number", 2)
     end
@@ -71,6 +75,7 @@ function _M.new(opts)
         server = server,
         client = client,
         upstream = opts.upstream,
+        on_frame = opts.on_frame,
         recv_timeout = opts.recv_timeout,
         aggregate_fragments = opts.aggregate_fragments,
         debug = opts.debug,
@@ -212,6 +217,21 @@ local function forwarder(self, ctx)
             -- forward
 
             if forward then
+
+                -- callback
+
+                if self.on_frame then
+                    local updated = self.on_frame(role, typ, data, fin)
+                    if updated ~= nil then
+                        if type(updated) ~= "string" then
+                            error("opts.on_frame return value must be " ..
+                                  "nil or a string")
+                        end
+
+                        data = updated
+                    end
+                end
+
                 if typ == "close" then
                     log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
                                   data)
