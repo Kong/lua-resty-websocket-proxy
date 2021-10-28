@@ -56,7 +56,10 @@ __DATA__
                 return ngx.exit(444)
             end
 
-            wb:execute()
+            local done, err = wb:execute()
+            if not done then
+                ngx.log(ngx.ERR, "failed proxying: ", err)
+            end
         }
     }
 
@@ -123,7 +126,10 @@ qr/frame type: text, payload: "hello world!"/
                 return ngx.exit(444)
             end
 
-            wb:execute()
+            local done, err = wb:execute()
+            if not done then
+                ngx.log(ngx.ERR, "failed proxying: ", err)
+            end
         }
     }
 
@@ -190,7 +196,10 @@ qr/frame type: ping, payload: "heartbeat client"/
                 return ngx.exit(444)
             end
 
-            wb:execute()
+            local done, err = wb:execute()
+            if not done then
+                ngx.log(ngx.ERR, "failed proxying: ", err)
+            end
         }
     }
 
