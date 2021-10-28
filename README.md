@@ -73,7 +73,10 @@ Gateway so as for it to satisfy the following requirements:
 1. Ability to create runtime plugins for web socket requests.
 2. Ability to access WebSocket frames properties.
 3. Ability to access aggregated frames.
-4. Ability to support URL path and query for session stickiness.
+4. Ability to support URL path and query\* for session stickiness.
+
+**\*** see the note at the end of this section for a foreseen issue with URL
+query string arguments and session stickiness.
 
 The current code path for WebSocket connections from the client is to land in
 the [ngx_http_upstream](http://lxr.nginx.org/source/xref/nginx/src/http/ngx_http_upstream.c?r=7833%3A3ab8e1e2f0f7#3455)
@@ -128,5 +131,19 @@ The following work items have so far been identified in this proposal:
    `websocket_frame_by_lua`. The frame properties will be passed to the on-frame
    callback, which must use the core/private PDK to set these values somewhere
    the public PDK can retrieve them from (e.g. `ngx.ctx`).
+
+**Note:** As of presently (October 2021), Kong's Router does not support query
+string arguments matching. Since this proposal relies on the Router matching
+a WebSocket-defined Route to run this Route's plugin, it would not be possible
+to execute a WebSocket plugin based on a query string argument without
+additional efforts.
+We must clarify if requirements 4. from the customer means an expectation to
+to configure WebSocket frame inspection plugins based on a WebSocket's query
+string argument (e.g.  `?arg=1`). If so, this translates to an expectation of
+Kong being able to execute plugins based on query string arguments, which is
+currently not possible. If the expectation on query string arguments is only to
+distinguish clients (but running the same plugins on all proxied WebSocket
+connections), then this can be negotiated within the Gateway's core as part of
+work item 3.c.
 
 [Back to TOC](#table-of-contents)
