@@ -17,7 +17,7 @@ Resources:
 
 # Synopsis
 
-```
+```lua
 http {
     server {
         listen 9000;
@@ -28,6 +28,20 @@ http {
 
                 local proxy, err = ws_proxy.new({
                     upstream = "ws://127.0.0.1:9001"
+                    aggregate_fragments = true,
+                    on_frame = function(origin, typ, payload, last)
+                        --  origin: [string] "client" or "upstream"
+                        --     typ: [string] "text", "binary", "ping", "pong", "close",
+                        --                   "continuation" (if aggregate_fragments is off)
+                        -- payload: [string/nil] payload if any
+                        --    last: [boolean] (always true if aggregate_fragments is on)
+
+                        if update_payload then
+                            return "new payload"
+                        end
+
+                        -- void: proxy payload as-is
+                    end
                 })
                 if not proxy then
                     ngx.log(ngx.ERR, "failed to create proxy: ", err)
@@ -36,7 +50,11 @@ http {
 
                 -- Start a bi-directional websocket proxy between
                 -- this client and the upstream
-                proxy:execute()
+                local done, err = wb:execute()
+                if not done then
+                    ngx.log(ngx.ERR, "failed proxying: ", err)
+                    return ngx.exit(444)
+                end
             }
         }
     }
