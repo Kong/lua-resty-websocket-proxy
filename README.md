@@ -30,11 +30,10 @@ http {
                     upstream = "ws://127.0.0.1:9001"
                     aggregate_fragments = true,
                     on_frame = function(origin, typ, payload, last)
-                        --  origin: [string] "client" or "upstream"
-                        --     typ: [string] "text", "binary", "ping", "pong", "close",
-                        --                   "continuation" (if aggregate_fragments is off)
-                        -- payload: [string/nil] payload if any
-                        --    last: [boolean] (always true if aggregate_fragments is on)
+                        --  origin: [string]     "client" or "upstream"
+                        --     typ: [string]     "text", "binary", "ping", "pong", "close"
+                        -- payload: [string|nil] payload if any
+                        --    last: [boolean]    (always true if aggregate_fragments is on)
 
                         if update_payload then
                             return "new payload"
@@ -153,7 +152,7 @@ string arguments matching. Since this proposal relies on the Router matching a
 WebSocket-defined Route to run this Route's plugin, it would not be possible to
 execute a WebSocket plugin based on a query string argument without additional
 efforts.
-We must clarify if requirements 4. from the customer means an expectation to to
+We must clarify if requirement 4. from the customer means an expectation to to
 configure WebSocket frame inspection plugins based on a WebSocket's query string
 argument (e.g. `?arg=1`). If so, this translates to an expectation of Kong being
 able to execute plugins based on query string arguments, which is currently not
