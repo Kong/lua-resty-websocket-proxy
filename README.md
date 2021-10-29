@@ -137,30 +137,28 @@ The following work items have so far been identified in this proposal:
 3. Plugins with `websocket_frame_by_lua`:
     - a. Update plugins so as to support a new handler in their interface:
          `:on_websocket_frame(opcode, payload, ...)`.
-    - b. Update lua-resty-websocket-proxy to support a frame callback.
-    - c. Such a callback is implemented in Kong so that when invoked, in turn
-         invokes the plugins runloop with `websocket_frame_by_lua` being the
-         current phase, which calls the `on_websocket_frame` handler.
-    - d. Update core so that when a WebSocket client connects, the balancer
+    - b. Update core so that when a WebSocket client connects, the balancer
          phase is ran to select an upstream and the WebSocket proxy is started
-         with the callback (`proxy:execute()`).
+         with `proxy:execute({ on_frame = callback })`).
+    - c. The on_frame callback is implemented in Kong so that when invoked, it
+         in turn invokes the plugins runloop with `websocket_frame_by_lua`
+         being the current phase, which calls the `on_websocket_frame` handler.
 4. Update the PDK to support frame properties retrieval from within
-   `websocket_frame_by_lua`. The frame properties will be passed to the on-frame
+   `websocket_frame_by_lua`. The frame properties are passed to the on_frame
    callback, which must use the core/private PDK to set these values somewhere
    the public PDK can retrieve them from (e.g. `ngx.ctx`).
 
 **Note:** As of presently (October 2021), Kong's Router does not support query
-string arguments matching. Since this proposal relies on the Router matching
-a WebSocket-defined Route to run this Route's plugin, it would not be possible
-to execute a WebSocket plugin based on a query string argument without
-additional efforts.
-We must clarify if requirements 4. from the customer means an expectation to
-to configure WebSocket frame inspection plugins based on a WebSocket's query
-string argument (e.g.  `?arg=1`). If so, this translates to an expectation of
-Kong being able to execute plugins based on query string arguments, which is
-currently not possible. If the expectation on query string arguments is only to
-distinguish clients (but running the same plugins on all proxied WebSocket
-connections), then this can be negotiated within the Gateway's core as part of
-work item 3.c.
+string arguments matching. Since this proposal relies on the Router matching a
+WebSocket-defined Route to run this Route's plugin, it would not be possible to
+execute a WebSocket plugin based on a query string argument without additional
+efforts.
+We must clarify if requirements 4. from the customer means an expectation to to
+configure WebSocket frame inspection plugins based on a WebSocket's query string
+argument (e.g. `?arg=1`). If so, this translates to an expectation of Kong being
+able to execute plugins based on query string arguments, which is currently not
+possible. If the expectation on query string arguments is only to distinguish
+clients (but running the same plugins on all proxied WebSocket connections),
+then this can be negotiated within the Gateway's core as part of work item 3.c.
 
 [Back to TOC](#table-of-contents)
