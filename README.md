@@ -57,7 +57,6 @@ http {
 # TODO
 
 - [ ] Limits on fragmented messages buffering (number of frames/payload size)
-- [ ] Callbacks on frames (in which users can execute arbitrary code)
 - [ ] Performance/latency analysis
 - [ ] Peer review
 
