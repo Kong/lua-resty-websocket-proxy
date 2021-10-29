@@ -49,7 +49,8 @@ __DATA__
 
             local function on_frame(role, typ, data, fin)
                 ngx.log(ngx.INFO, "from: ", role, ", type: ", typ,
-                                  ", payload: ", data, ", fin: ", fin)
+                                  ", payload: ", data, ", fin: ", fin,
+                                  ", context: ", ngx.get_phase())
             end
 
             local wb, err = proxy.new({
@@ -86,8 +87,8 @@ GET /t
 hello world!
 --- grep_error_log eval: qr/\[lua\].*/
 --- grep_error_log_out eval
-qr/.*?from: client, type: text, payload: hello world!, fin: true.*?
-.*?from: upstream, type: text, payload: hello world!, fin: true.*/
+qr/.*?from: client, type: text, payload: hello world!, fin: true, context: content.*?
+.*?from: upstream, type: text, payload: hello world!, fin: true, context: content.*/
 --- no_error_log
 [error]
 
