@@ -137,7 +137,8 @@ local function forwarder(self, ctx)
             else
                 log(ngx.ERR, fmt("failed receiving frame from %s: %s",
                                  role, err))
-                -- continue
+                self.state = _PROXY_STATES.CLOSING
+                return role, err
             end
         end
 
@@ -281,9 +282,9 @@ function _M:execute()
         buf = new_tab(0, 0),
     })
 
-    local ok, res = ngx.thread.wait(self.co_client, self.co_server)
+    local ok, res, err = ngx.thread.wait(self.co_client, self.co_server)
     if not ok then
-        log(ngx.ERR, "failed to wait for threads: ", res)
+        log(ngx.ERR, "failed to wait for websocket proxy threads: ", res)
 
     elseif res == "client" then
         assert(self.state == _PROXY_STATES.CLOSING)
@@ -305,6 +306,10 @@ function _M:execute()
     end
 
     self.state = _PROXY_STATES.INIT
+
+    if err then
+        return nil, err
+    end
 
     return true
 end
