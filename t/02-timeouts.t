@@ -51,11 +51,25 @@ __DATA__
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
             local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
                 recv_timeout = 80,
             })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -129,11 +143,25 @@ qr/.*?timeout receiving frame from client, reopening.*
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
             local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
                 recv_timeout = 80,
             })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -143,6 +171,7 @@ qr/.*?timeout receiving frame from client, reopening.*
             end
         }
     }
+
 
     location /t {
         content_by_lua_block {

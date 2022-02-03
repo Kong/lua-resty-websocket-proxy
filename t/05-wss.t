@@ -60,11 +60,22 @@ qq{
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
-            local wb, err = proxy.new({
-                upstream = "wss://127.0.0.1:9001/upstream",
-            })
+            local wb, err = proxy.new()
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream("wss://127.0.0.1:9001/upstream")
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -74,6 +85,7 @@ qq{
             end
         }
     }
+
 
     location /t {
         content_by_lua_block {

@@ -17,10 +17,10 @@ local log = ngx.log
 
 
 local _DEBUG_PAYLOAD_MAX_LEN = 24
-local _PROXY_STATES = {
-    INIT = 0,
-    ESTABLISHED = 1,
-    CLOSING = 2,
+local _STATES = {
+    INIT = 1,
+    ESTABLISHED = 2,
+    CLOSING = 3,
 }
 
 local _TYP2OPCODE = {
@@ -49,10 +49,6 @@ function _M.new(opts)
         error("opts must be a table", 2)
     end
 
-    if type(opts.upstream) ~= "string" then
-        error("opts.upstream must be a string", 2)
-    end
-
     if opts.on_frame ~= nil and type(opts.on_frame) ~= "function" then
         error("opts.on_frame must be a function", 2)
     end
@@ -61,25 +57,23 @@ function _M.new(opts)
         error("opts.recv_timeout must be a number", 2)
     end
 
-    local server, err = ws_server:new()
-    if not server then
-        return nil, "failed to create server: " .. err
-    end
-
+    -- TODO: provide a means of passing options through to the
+    -- resty.websocket.client constructor (like `max_payload_len`)
     local client, err = ws_client:new()
     if not client then
         return nil, "failed to create client: " .. err
     end
 
     local self = {
-        server = server,
+        server = nil,
         client = client,
-        upstream = opts.upstream,
+        upstream = nil,
         on_frame = opts.on_frame,
         recv_timeout = opts.recv_timeout,
         aggregate_fragments = opts.aggregate_fragments,
         debug = opts.debug,
-        state = _PROXY_STATES.INIT,
+        client_state = _STATES.INIT,
+        upstream_state = _STATES.INIT,
         co_client = nil,
         co_server = nil,
     }
@@ -99,22 +93,26 @@ local function forwarder(self, ctx)
     local role = ctx.role
     local buf = ctx.buf
     local self_ws, peer_ws
+    local state = role .. "_state"
+    local peer_state
     local frame_typ
 
-    assert(self.state == _PROXY_STATES.ESTABLISHED)
+    assert(self[state] == _STATES.ESTABLISHED)
 
     if role == "client" then
         self_ws = self.server
         peer_ws = self.client
+        peer_state = "upstream_state"
 
     else
         -- role == "upstream"
         self_ws = self.client
         peer_ws = self.server
+        peer_state = "client_state"
     end
 
     while true do
-        if self.state == _PROXY_STATES.CLOSING then
+        if self[peer_state] == _STATES.CLOSING then
             return
         end
 
@@ -132,13 +130,13 @@ local function forwarder(self, ctx)
                 -- continue
 
             elseif find(err, "closed", 1, true) then
-                self.state = _PROXY_STATES.CLOSING
+                self[state] = _STATES.CLOSING
                 return role
 
             else
                 log(ngx.ERR, fmt("failed receiving frame from %s: %s",
                                  role, err))
-                self.state = _PROXY_STATES.CLOSING
+                self[state] = _STATES.CLOSING
                 return role, err
             end
         end
@@ -277,19 +275,48 @@ local function forwarder(self, ctx)
 end
 
 
-function _M:execute()
-    assert(self.state == _PROXY_STATES.INIT)
+function _M:connect_upstream(uri, opts)
+    assert(self.upstream_state == _STATES.INIT)
 
-    self:dd("connecting to \"", self.upstream, "\" upstream")
+    self:dd("connecting to \"", uri, "\" upstream")
 
-    local ok, err = self.client:connect(self.upstream)
+    local ok, err, res = self.client:connect(uri, opts)
     if not ok then
-        return nil, "failed to connect client: " .. err
+        return nil, err
     end
 
-    self.state = _PROXY_STATES.ESTABLISHED
+    self:dd("connected to \"", uri, "\" upstream")
 
-    self:dd("connected to \"", self.upstream, "\" upstream")
+    self.upstream = uri
+
+    self.upstream_state = _STATES.ESTABLISHED
+
+    return true, nil, res
+end
+
+
+function _M:connect_client()
+    assert(self.client_state == _STATES.INIT)
+
+    self:dd("completing client handshake")
+    local server, err = ws_server:new()
+    if not server then
+        return nil, err
+    end
+
+    self:dd("completed client handshake")
+
+    self.server = server
+
+    self.client_state = _STATES.ESTABLISHED
+
+    return true
+end
+
+
+function _M:execute()
+    assert(self.client_state == _STATES.ESTABLISHED
+           and self.upstream_state == _STATES.ESTABLISHED)
 
     self.co_client = ngx.thread.spawn(forwarder, self, {
         role = "client",
@@ -306,7 +333,7 @@ function _M:execute()
         log(ngx.ERR, "failed to wait for websocket proxy threads: ", res)
 
     elseif res == "client" then
-        assert(self.state == _PROXY_STATES.CLOSING)
+        assert(self.client_state == _STATES.CLOSING)
 
         self:dd(res, " thread terminated, killing server thread")
 
@@ -317,14 +344,17 @@ function _M:execute()
         self.client:close()
 
     elseif res == "upstream" then
-        assert(self.state == _PROXY_STATES.CLOSING)
+        assert(self.upstream_state == _STATES.CLOSING)
 
         self:dd(res, " thread terminated, killing client thread")
 
         ngx.thread.kill(self.co_client)
     end
 
-    self.state = _PROXY_STATES.INIT
+    self.co_client = nil
+    self.co_server = nil
+    self.client_state = _STATES.INIT
+    self.upstream_state = _STATES.INIT
 
     if err then
         return nil, err
