@@ -50,11 +50,24 @@ __DATA__
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
-            local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
-            })
+            local wb, err = proxy.new()
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -132,12 +145,24 @@ qr/.*?frame type: text, payload: "hello".*
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
-            local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
-                aggregate_fragments = true,
-            })
+            local wb, err = proxy.new({ aggregate_fragments = true })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -147,6 +172,7 @@ qr/.*?frame type: text, payload: "hello".*
             end
         }
     }
+
 
     location /t {
         content_by_lua_block {
@@ -219,12 +245,24 @@ qr/.*?frame type: text, payload: "hello world".*/
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
-            local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
-                aggregate_fragments = true,
-            })
+            local wb, err = proxy.new({ aggregate_fragments = true })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -307,12 +345,24 @@ qr/.*?frame type: text, payload: "hello world".*/
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
-            local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
-                aggregate_fragments = true,
-            })
+            local wb, err = proxy.new({ aggregate_fragments = true })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -322,6 +372,7 @@ qr/.*?frame type: text, payload: "hello world".*/
             end
         }
     }
+
 
     location /t {
         content_by_lua_block {
@@ -411,12 +462,26 @@ qr/.*?frame type: text, payload: "hello world".*
             end
 
             local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
                 aggregate_fragments = true,
                 on_frame = on_frame,
             })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -426,6 +491,7 @@ qr/.*?frame type: text, payload: "hello world".*
             end
         }
     }
+
 
     location /t {
         content_by_lua_block {
@@ -516,13 +582,28 @@ qr/.*?from: client, type: text, payload: hello world, fin: true.*
                 return "updated " .. role .. " frame"
             end
 
+
             local wb, err = proxy.new({
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
                 aggregate_fragments = false,
                 on_frame = on_frame,
             })
             if not wb then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_upstream(
+                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            )
+
+            if not ok then
+                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
+                return ngx.exit(444)
+            end
+
+            local ok, err = wb:connect_client()
+            if not ok then
+                ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
@@ -532,6 +613,7 @@ qr/.*?from: client, type: text, payload: hello world, fin: true.*
             end
         }
     }
+
 
     location /t {
         content_by_lua_block {
@@ -626,11 +708,15 @@ qr/.*?from: client, type: text, payload: hello, fin: false.*
                 end
             end
 
-            local wb, err = proxy.new({
-                aggregate_fragments = false,
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
-            })
+            local wb, err = proxy.new({ aggregate_fragments = false })
             check(wb, err, "failed creating proxy")
+
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect_upstream(uri)
+            check(ok, err, "failed connecting to upstream")
+
+            ok, err = wb:connect_client()
+            check(ok, err, "failed client handshake")
 
             local done, err = wb:execute()
             check(done, err, "failed proxying")
@@ -720,11 +806,15 @@ typ: close, data: "server close", err/code: 1000
                 end
             end
 
-            local wb, err = proxy.new({
-                aggregate_fragments = true,
-                upstream = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream",
-            })
+            local wb, err = proxy.new({ aggregate_fragments = true })
             check(wb, err, "failed creating proxy")
+
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect_upstream(uri)
+            check(ok, err, "failed connecting to upstream")
+
+            ok, err = wb:connect_client()
+            check(ok, err, "failed client handshake")
 
             local done, err = wb:execute()
             check(done, err, "failed proxying")
