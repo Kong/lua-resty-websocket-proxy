@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: main
+  pull_request:
+    branches: '*'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        openresty: [1.19.9.1]
+        openssl: [1.1.1l]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build OpenResty
+        uses: thibaultcha/actions-openresty@main
+        with:
+          version: ${{ matrix.openresty }}
+          opt: --without-stream
+          with-openssl-version: ${{ matrix.openssl }}
+      - run: prove -r t/
