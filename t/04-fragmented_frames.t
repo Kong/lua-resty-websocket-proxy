@@ -417,11 +417,11 @@ qr/.*?frame type: text, payload: "hello world".*
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
 
-            local function on_frame(role, typ, data, fin)
+            local function on_frame(_, role, typ, data, fin, code)
                 ngx.log(ngx.INFO, "from: ", role, ", type: ", typ,
                                   ", payload: ", data, ", fin: ", fin)
 
-                return "updated " .. role .. " frame"
+                return "updated " .. role .. " frame", code
             end
 
             local wp, err = proxy.new({
@@ -536,11 +536,11 @@ qr/.*?from: client, type: text, payload: hello world, fin: true.*
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
 
-            local function on_frame(role, typ, data, fin)
+            local function on_frame(_, role, typ, data, fin, code)
                 ngx.log(ngx.INFO, "from: ", role, ", type: ", typ,
                                   ", payload: ", data, ", fin: ", fin)
 
-                return "updated " .. role .. " frame"
+                return "updated " .. role .. " frame", code
             end
 
             local wp, err = proxy.new({

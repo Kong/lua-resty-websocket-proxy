@@ -95,6 +95,7 @@ local function forwarder(self, ctx)
     local self_ws, peer_ws
     local self_state, peer_state
     local frame_typ
+    local on_frame = self.on_frame
 
     self_state = role .. "_state"
 
@@ -239,31 +240,49 @@ local function forwarder(self, ctx)
 
                 -- callback
 
-                if self.on_frame then
-                    local updated = self.on_frame(role, typ, data, fin)
+                if on_frame then
+                    local updated, updated_code = on_frame(self, role, typ,
+                                                           data, fin, code)
                     if updated ~= nil then
                         if type(updated) ~= "string" then
                             error("opts.on_frame return value must be " ..
                                   "nil or a string")
                         end
+                    end
 
-                        data = updated
+                    data = updated
+
+                    if typ == "close" and updated_code ~= nil then
+                        if type(updated_code) ~= "number" then
+                            error("opts.on_frame status code return value " ..
+                                  "must be nil or a number")
+                        end
+
+                        code = updated_code
                     end
                 end
 
-                if typ == "close" then
-                    log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
-                                  data)
+                if on_frame and data == nil then
+                    self:dd(role, " dropping ", typ, " frame after on_frame handler requested it")
 
-                    bytes, err = peer_ws:send_close(code, data)
+                    -- continue: while true
 
                 else
-                    bytes, err = peer_ws:send_frame(fin, opcode, data)
-                end
+                    if typ == "close" then
+                        log(ngx.INFO, "forwarding close with code: ", code, ", payload: ",
+                                      data)
 
-                if not bytes then
-                    log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
-                                     role, err))
+                        bytes, err = peer_ws:send_close(code, data)
+
+                    else
+                        bytes, err = peer_ws:send_frame(fin, opcode, data)
+                    end
+
+                    if not bytes then
+                        log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
+                                         role, err))
+                        -- continue
+                    end
                 end
             end
 
