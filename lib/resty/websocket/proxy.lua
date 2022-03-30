@@ -99,6 +99,7 @@ local function forwarder(self, ctx)
     local role = ctx.role
     local buf = ctx.buf
     local self_ws, peer_ws
+    local frame_typ
 
     assert(self.state == _PROXY_STATES.ESTABLISHED)
 
@@ -152,6 +153,9 @@ local function forwarder(self, ctx)
             err = nil
         end
 
+        local data_frame = typ == "text" or typ == "binary" or
+                           typ == "continuation"
+
         if typ then
             if not opcode then
                 log(ngx.EMERG, "NYI - unknown frame type: ", typ,
@@ -200,11 +204,15 @@ local function forwarder(self, ctx)
 
             -- fragmentation
 
-            if self.aggregate_fragments then
+            if self.aggregate_fragments and data_frame then
                 if not fin then
                     self:dd(role, " received fragmented frame, buffering")
                     insert(buf, data)
                     forward = false
+
+                    -- stash data frame type of initial fragment
+                    frame_typ = frame_typ or typ
+
                     -- continue
 
                 elseif #buf > 0 then
@@ -212,6 +220,11 @@ local function forwarder(self, ctx)
                     insert(buf, data)
                     data = concat(buf, "")
                     clear_tab(buf)
+
+                    -- restore initial fragment type and opcode
+                    typ = frame_typ
+                    frame_typ = nil
+                    opcode = _TYP2OPCODE[typ]
                 end
             end
 
