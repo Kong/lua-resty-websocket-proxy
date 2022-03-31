@@ -153,9 +153,6 @@ local function forwarder(self, ctx)
             err = nil
         end
 
-        local data_frame = typ == "text" or typ == "binary" or
-                           typ == "continuation"
-
         if typ then
             if not opcode then
                 log(ngx.EMERG, "NYI - unknown frame type: ", typ,
@@ -207,6 +204,9 @@ local function forwarder(self, ctx)
 
             local bytes
             local forward = true
+            local data_frame = typ == "text"
+                               or typ == "binary"
+                               or typ == "continuation"
 
             -- fragmentation
 
