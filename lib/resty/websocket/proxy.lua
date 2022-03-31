@@ -170,6 +170,7 @@ local function forwarder(self, ctx)
             -- debug
 
             if self.debug and (not err or typ == "close") then
+                local extra = ""
                 local arrow
 
                 if typ == "close" then
@@ -184,18 +185,23 @@ local function forwarder(self, ctx)
                     payload = sub(payload, 1, _DEBUG_PAYLOAD_MAX_LEN) .. "[...]"
                 end
 
-                local extra = ""
                 if code then
                     extra = fmt("\n  code: %d", code)
                 end
 
+                if frame_typ then
+                    extra = fmt("\n  initial type: \"%s\"", frame_typ)
+                end
+
                 self:dd(fmt("\n[frame] downstream %s resty.proxy %s upstream\n" ..
-                            "  type: \"%s\"\n" ..
-                            "  payload: %s (len: %d)%s\n" ..
+                            "  aggregating: %s\n" ..
+                            "  type: \"%s\"%s\n" ..
+                            "  payload: %s (len: %d)\n" ..
                             "  fin: %s",
                             arrow, arrow,
-                            typ,
-                            fmt("%q", payload), data and #data or 0, extra,
+                            self.aggregate_fragments,
+                            typ, extra,
+                            fmt("%q", payload), data and #data or 0,
                             fin))
             end
 
