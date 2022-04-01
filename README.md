@@ -26,17 +26,20 @@ http {
 
                 local proxy, err = ws_proxy.new({
                     aggregate_fragments = true,
-                    on_frame = function(origin, typ, payload, last)
-                        --  origin: [string]     "client" or "upstream"
-                        --     typ: [string]     "text", "binary", "ping", "pong", "close"
-                        -- payload: [string|nil] payload if any
-                        --    last: [boolean]    (always true if aggregate_fragments is on)
+                    on_frame = function(origin, typ, payload, last, code)
+                        --  origin: [string]      "client" or "upstream"
+                        --     typ: [string]      "text", "binary", "ping", "pong", "close"
+                        -- payload: [string|nil]  payload if any
+                        --    last: [boolean]     fin flag for fragmented frames; true if aggregate_fragments is on
+                        --    code: [number|nil]  code for "close" frames
 
                         if update_payload then
-                            return "new payload"
+                            -- change payload + code before forwarding
+                            return "new payload", 1001
                         end
 
-                        -- void: proxy payload as-is
+                        -- forward as-is
+                        return payload
                     end
                 })
                 if not proxy then
@@ -52,7 +55,7 @@ http {
 
                 -- Start a bi-directional websocket proxy between
                 -- this client and the upstream
-                local done, err = wb:execute()
+                local done, err = proxy:execute()
                 if not done then
                     ngx.log(ngx.ERR, "failed proxying: ", err)
                     return ngx.exit(444)
