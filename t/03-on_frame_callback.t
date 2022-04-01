@@ -9,7 +9,7 @@ run_tests();
 
 __DATA__
 
-=== TEST 1: invokes opts.on_frame function on each frame
+=== TEST 1: invokes opts.on_frame function on each client/upstream frame
 --- http_config eval: $t::Tests::HttpConfig
 --- config
     location /proxy {
@@ -18,7 +18,8 @@ __DATA__
 
             local function on_frame(_, role, typ, data, fin, code)
                 ngx.log(ngx.INFO, "from: ", role, ", type: ", typ,
-                                  ", payload: ", data, ", fin: ", fin,
+                                  ", payload: ", data,
+                                  ", fin: ", fin, ", code: ", code,
                                   ", context: ", ngx.get_phase())
                 -- test: only return data (code == nil)
                 return data
@@ -60,14 +61,14 @@ __DATA__
 hello world!
 --- grep_error_log eval: qr/\[lua\].*?from:.*/
 --- grep_error_log_out eval
-qr/.*?from: client, type: text, payload: hello world!, fin: true, context: content.*?
-.*?from: upstream, type: text, payload: hello world!, fin: true, context: content.*/
+qr/.*?from: client, type: text, payload: hello world!, fin: true, code: nil, context: content.*
+.*?from: upstream, type: text, payload: hello world!, fin: true, code: nil, context: content.*/
 --- no_error_log
 [error]
 
 
 
-=== TEST 2: opts.on_frame can update a text frame payload
+=== TEST 2: opts.on_frame can update an upstream text frame payload
 --- http_config eval: $t::Tests::HttpConfig
 --- config
     location /proxy {
@@ -117,14 +118,14 @@ qr/.*?from: client, type: text, payload: hello world!, fin: true, context: conte
 updated upstream frame
 --- grep_error_log eval: qr/\[lua\].*from:.*/
 --- grep_error_log_out eval
-qr/.*?from: client, type: text, payload: hello world!, fin: true.*?
+qr/.*?from: client, type: text, payload: hello world!, fin: true.*
 .*?from: upstream, type: text, payload: updated client frame, fin: true.*/
 --- no_error_log
 [error]
 
 
 
-=== TEST 3: opts.on_frame can update a binary frame payload
+=== TEST 3: opts.on_frame can update an upstream binary frame payload
 --- http_config eval: $t::Tests::HttpConfig
 --- config
     location /upstream {
@@ -156,7 +157,7 @@ qr/.*?from: client, type: text, payload: hello world!, fin: true.*?
             local proxy = require "resty.websocket.proxy"
 
             local function on_frame(_, role, typ, data, fin, code)
-                return "updated " .. role .. " frame (" .. typ .. ")", code
+                return "updated " .. role .. " frame (" .. typ .. ")"
             end
 
             local wp, err = proxy.new({ on_frame = on_frame })
@@ -200,7 +201,7 @@ binary: updated upstream frame (binary)
 
 
 
-=== TEST 4: opts.on_frame can update a close frame payload
+=== TEST 4: opts.on_frame can update an upstream close frame payload
 --- log_level: debug
 --- http_config eval: $t::Tests::HttpConfig
 --- config
@@ -228,10 +229,10 @@ binary: updated upstream frame (binary)
             local fmt = string.format
 
             local function on_frame(_, role, typ, data, fin, code)
-                local msg = "updated " .. role .. " frame (" .. typ .. ")"
+                local msg = fmt("updated %s frame (typ: %s, code: %d)", role, typ, code)
 
-                ngx.log(ngx.DEBUG, fmt("updated %s [%s] frame payload from %s to %s",
-                                       role, typ, fmt("%q", data), fmt("%q", msg)))
+                ngx.log(ngx.DEBUG, fmt("updated %s frame payload from %s to %s",
+                                       role, fmt("%q", data), fmt("%q", msg)))
 
                 return msg, code
             end
@@ -272,7 +273,7 @@ binary: updated upstream frame (binary)
     }
 --- response_body
 close
-updated upstream frame (close)
+updated upstream frame (typ: close, code: 1000)
 1000
 --- no_error_log
 [error]
@@ -280,7 +281,7 @@ updated upstream frame (close)
 
 
 
-=== TEST 5: opts.on_frame can update a close frame status code
+=== TEST 5: opts.on_frame can update an upstream close frame status code
 --- log_level: debug
 --- http_config eval: $::HttpConfig
 --- config
@@ -360,7 +361,7 @@ server close
 
 
 
-=== TEST 6: opts.on_frame can cause a frame to be dropped
+=== TEST 6: opts.on_frame can drop an upstream frame
 --- log_level: debug
 --- http_config eval: $::HttpConfig
 --- config
@@ -375,6 +376,7 @@ server close
             end
 
             local payloads = { "a", "b", "drop me", "c"}
+
             for _, data in ipairs(payloads) do
                 local ok, err = wb:send_text(data)
                 if not ok then
@@ -436,8 +438,7 @@ server close
 
             repeat
                 local data, typ, err = assert(wb:recv_frame())
-                ngx.say(fmt("typ: %s, data: %q, err/code: %s",
-                            typ, data, err))
+                ngx.say(fmt("typ: %s, data: %q, err/code: %s", typ, data, err))
             until typ == "close"
         }
     }
@@ -446,6 +447,7 @@ typ: text, data: "a", err/code: nil
 typ: text, data: "b", err/code: nil
 typ: text, data: "c", err/code: nil
 typ: close, data: "server close", err/code: 1000
+--- error_log
+dropping 'drop me' frame
 --- no_error_log
 [error]
-[crit]
