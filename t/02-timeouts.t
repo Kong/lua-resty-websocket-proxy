@@ -26,15 +26,9 @@ __DATA__
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(proxy._tests.echo)
+            local ok, err = wb:connect(proxy._tests.echo)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
@@ -116,18 +110,10 @@ qr/.*?timeout receiving frame from client, reopening.*
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect(uri)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 

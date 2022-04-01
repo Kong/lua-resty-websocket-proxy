@@ -55,15 +55,9 @@ qq{
                 return ngx.exit(444)
             end
 
-            local ok, err = wp:connect_upstream("wss://127.0.0.1:9001/upstream")
+            local ok, err = wp:connect("wss://127.0.0.1:9001/upstream")
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wp:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
