@@ -33,7 +33,7 @@ local _TYP2OPCODE = {
 }
 
 
-local _M     = {
+local _M = {
     _VERSION = "0.0.1",
 }
 
@@ -264,9 +264,10 @@ local function forwarder(self, ctx)
                 if not bytes then
                     log(ngx.ERR, fmt("failed forwarding a frame from %s: %s",
                                      role, err))
-                    -- continue
                 end
             end
+
+            -- continue: while true
         end
 
         self:dd(role, " yielding")
