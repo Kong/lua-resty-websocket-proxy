@@ -98,7 +98,7 @@ local function forwarder(self, ctx)
 
     self_state = role .. "_state"
 
-    assert(self[self_state] == _STATES.ESTABLISHED)
+    --assert(self[self_state] == _STATES.ESTABLISHED)
 
     if role == "client" then
         self_ws = self.server
@@ -360,7 +360,7 @@ function _M:execute()
         log(ngx.ERR, "failed to wait for websocket proxy threads: ", err)
 
     elseif res == "client" then
-        assert(self.client_state == _STATES.CLOSING)
+        --assert(self.client_state == _STATES.CLOSING)
 
         self:dd(res, " thread terminated, killing server thread")
 
@@ -371,7 +371,7 @@ function _M:execute()
         self.client:close()
 
     elseif res == "upstream" then
-        assert(self.upstream_state == _STATES.CLOSING)
+        --assert(self.upstream_state == _STATES.CLOSING)
 
         self:dd(res, " thread terminated, killing client thread")
 
