@@ -65,9 +65,9 @@ function _M.new(opts)
     end
 
     local self = {
-        server = nil,
         client = client,
-        upstream = nil,
+        server = nil,
+        upstream_uri = nil,
         on_frame = opts.on_frame,
         recv_timeout = opts.recv_timeout,
         aggregate_fragments = opts.aggregate_fragments,
@@ -93,11 +93,12 @@ local function forwarder(self, ctx)
     local role = ctx.role
     local buf = ctx.buf
     local self_ws, peer_ws
-    local state = role .. "_state"
-    local peer_state
+    local self_state, peer_state
     local frame_typ
 
-    assert(self[state] == _STATES.ESTABLISHED)
+    self_state = role .. "_state"
+
+    assert(self[self_state] == _STATES.ESTABLISHED)
 
     if role == "client" then
         self_ws = self.server
@@ -130,13 +131,13 @@ local function forwarder(self, ctx)
                 -- continue
 
             elseif find(err, "closed", 1, true) then
-                self[state] = _STATES.CLOSING
+                self[self_state] = _STATES.CLOSING
                 return role
 
             else
                 log(ngx.ERR, fmt("failed receiving frame from %s: %s",
                                  role, err))
-                self[state] = _STATES.CLOSING
+                self[self_state] = _STATES.CLOSING
                 return role, err
             end
         end
@@ -276,7 +277,11 @@ end
 
 
 function _M:connect_upstream(uri, opts)
-    assert(self.upstream_state == _STATES.INIT)
+    if self.upstream_state == _STATES.ESTABLISHED then
+        log(ngx.WARN, fmt("connection with upstream at %q already established",
+                          self.upstream_uri))
+        return true
+    end
 
     self:dd("connecting to \"", uri, "\" upstream")
 
@@ -287,8 +292,7 @@ function _M:connect_upstream(uri, opts)
 
     self:dd("connected to \"", uri, "\" upstream")
 
-    self.upstream = uri
-
+    self.upstream_uri = uri
     self.upstream_state = _STATES.ESTABLISHED
 
     return true, nil, res
@@ -296,9 +300,13 @@ end
 
 
 function _M:connect_client()
-    assert(self.client_state == _STATES.INIT)
+    if self.client_state == _STATES.ESTABLISHED then
+        log(ngx.WARN, "client handshake already completed")
+        return true
+    end
 
     self:dd("completing client handshake")
+
     local server, err = ws_server:new()
     if not server then
         return nil, err
@@ -307,16 +315,35 @@ function _M:connect_client()
     self:dd("completed client handshake")
 
     self.server = server
-
     self.client_state = _STATES.ESTABLISHED
 
     return true
 end
 
 
+function _M:connect(uri, upstream_opts)
+    local ok, err = self:connect_upstream(uri, upstream_opts)
+    if not ok then
+        return nil, "failed connecting to upstream: " .. err
+    end
+
+    ok, err = self:connect_client()
+    if not ok then
+        return nil, "failed client handshake: " .. err
+    end
+
+    return true
+end
+
+
 function _M:execute()
-    assert(self.client_state == _STATES.ESTABLISHED
-           and self.upstream_state == _STATES.ESTABLISHED)
+    if self.client_state ~= _STATES.ESTABLISHED then
+        return nil, "client handshake not complete"
+    end
+
+    if self.upstream_state ~= _STATES.ESTABLISHED then
+        return nil, "upstream connection not established"
+    end
 
     self.co_client = ngx.thread.spawn(forwarder, self, {
         role = "client",
@@ -330,7 +357,7 @@ function _M:execute()
 
     local ok, res, err = ngx.thread.wait(self.co_client, self.co_server)
     if not ok then
-        log(ngx.ERR, "failed to wait for websocket proxy threads: ", res)
+        log(ngx.ERR, "failed to wait for websocket proxy threads: ", err)
 
     elseif res == "client" then
         assert(self.client_state == _STATES.CLOSING)
@@ -339,7 +366,7 @@ function _M:execute()
 
         ngx.thread.kill(self.co_server)
 
-        self:dd("closing \"", self.upstream, "\" upstream websocket")
+        self:dd("closing \"", self.upstream_uri, "\" upstream websocket")
 
         self.client:close()
 

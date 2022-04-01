@@ -12,6 +12,7 @@ our $HttpConfig = qq{
 };
 
 log_level('info');
+no_long_string();
 
 run_tests();
 
@@ -54,18 +55,10 @@ __DATA__
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect(uri)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
@@ -128,7 +121,6 @@ qr/frame type: text, payload: "hello world!"/
         }
     }
 
-
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
@@ -138,18 +130,10 @@ qr/frame type: text, payload: "hello world!"/
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect(uri)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
@@ -159,7 +143,6 @@ qr/frame type: text, payload: "hello world!"/
             end
         }
     }
-
 
     location /t {
         content_by_lua_block {
@@ -222,18 +205,10 @@ qr/frame type: ping, payload: "heartbeat client"/
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect(uri)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
@@ -307,18 +282,10 @@ qr/frame type: binary, payload: "你好, WebSocket!"/
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect(uri)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
@@ -384,18 +351,10 @@ qr/frame type: close, code: 1000, payload: "goodbye"/
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect(uri)
             if not ok then
-                ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
-                return ngx.exit(444)
-            end
-
-            local ok, err = wb:connect_client()
-            if not ok then
-                ngx.log(ngx.ERR, "failed client handshake: ", err)
+                ngx.log(ngx.ERR, err)
                 return ngx.exit(444)
             end
 
@@ -405,7 +364,6 @@ qr/frame type: close, code: 1000, payload: "goodbye"/
             end
         }
     }
-
 
     location /t {
         content_by_lua_block {
@@ -473,10 +431,8 @@ qr/forwarding close with code: nil/
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream(
-                "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
-            )
-
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err = wb:connect_upstream(uri)
             if not ok then
                 ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
                 return ngx.exit(444)
