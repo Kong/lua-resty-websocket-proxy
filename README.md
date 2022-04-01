@@ -25,7 +25,6 @@ http {
                 local ws_proxy = require "resty.websocket.proxy"
 
                 local proxy, err = ws_proxy.new({
-                    upstream = "ws://127.0.0.1:9001"
                     aggregate_fragments = true,
                     on_frame = function(origin, typ, payload, last)
                         --  origin: [string]     "client" or "upstream"
@@ -42,6 +41,12 @@ http {
                 })
                 if not proxy then
                     ngx.log(ngx.ERR, "failed to create proxy: ", err)
+                    return ngx.exit(444)
+                end
+
+                local ok, err = proxy:connect("ws://127.0.0.1:9001")
+                if not ok then
+                    ngx.log(ngx.ERR, err)
                     return ngx.exit(444)
                 end
 
