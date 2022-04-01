@@ -1,20 +1,9 @@
 # vim:set ts=4 sts=4 sw=4 et ft=:
 
-use Test::Nginx::Socket::Lua;
-use Cwd qw(cwd);
-
-$ENV{TEST_NGINX_CERT_DIR} ||= File::Spec->catdir(server_root(), '..', 'certs');
-$ENV{TEST_NGINX_PORT2}   ||= 9001;
+use lib '.';
+use t::Tests;
 
 plan tests => repeat_each() * (blocks() * 4);
-
-my $pwd = cwd();
-
-our $HttpConfig = qq{
-    lua_package_path "$pwd/lib/?.lua;$pwd/misc/lua-resty-websocket/lib/?.lua;;";
-};
-
-log_level('info');
 
 run_tests();
 
@@ -23,7 +12,7 @@ __DATA__
 === TEST 1: forward a text frame back and forth over wss
 --- http_config eval
 qq{
-    $::HttpConfig
+    $t::Tests::HttpConfig
 
     server {
         listen $ENV{TEST_NGINX_PORT2} ssl;
@@ -33,6 +22,7 @@ qq{
         location /upstream {
             content_by_lua_block {
                 local server = require "resty.websocket.server"
+
                 local wb, err = server:new()
                 if not wb then
                     ngx.log(ngx.ERR, "failed creating server: ", err)
@@ -60,32 +50,32 @@ qq{
     location /proxy {
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
-            local wb, err = proxy.new()
-            if not wb then
+
+            local wp, err = proxy.new()
+            if not wp then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_upstream("wss://127.0.0.1:9001/upstream")
-
+            local ok, err = wp:connect_upstream("wss://127.0.0.1:9001/upstream")
             if not ok then
                 ngx.log(ngx.ERR, "failed connecting to upstream: ", err)
                 return ngx.exit(444)
             end
 
-            local ok, err = wb:connect_client()
+            local ok, err = wp:connect_client()
             if not ok then
                 ngx.log(ngx.ERR, "failed client handshake: ", err)
                 return ngx.exit(444)
             end
 
-            local done, err = wb:execute()
+            local done, err = wp:execute()
             if not done then
                 ngx.log(ngx.ERR, "failed proxying: ", err)
+                return ngx.exit(444)
             end
         }
     }
-
 
     location /t {
         content_by_lua_block {
@@ -99,8 +89,6 @@ qq{
             ngx.say(data)
         }
     }
---- request
-GET /t
 --- response_body
 hello world!
 --- grep_error_log eval: qr/\[lua\].*/
