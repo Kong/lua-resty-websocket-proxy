@@ -57,6 +57,21 @@ function _M.new(opts)
         error("opts.recv_timeout must be a number", 2)
     end
 
+    if opts.max_frame_size ~= nil
+       and (type(opts.max_frame_size) ~= "number"
+            or opts.max_frame_size < 1)
+    then
+        error("opts.max_frame_size must be a number >= 1", 2)
+    end
+
+    if opts.max_fragments ~= nil
+       and (type(opts.max_fragments) ~= "number"
+            or opts.max_fragments < 1)
+    then
+        error("opts.max_fragments must be a number >= 1", 2)
+    end
+
+
     -- TODO: provide a means of passing options through to the
     -- resty.websocket.client constructor (like `max_payload_len`)
     local client, err = ws_client:new()
@@ -70,6 +85,8 @@ function _M.new(opts)
         upstream_uri = nil,
         on_frame = opts.on_frame,
         recv_timeout = opts.recv_timeout,
+        max_frame_size = opts.max_frame_size,
+        max_fragments = opts.max_fragments,
         aggregate_fragments = opts.aggregate_fragments,
         debug = opts.debug,
         client_state = _STATES.INIT,
@@ -89,13 +106,48 @@ function _M:dd(...)
 end
 
 
+local function send_close_frame(self, ws, role, code, data)
+    self:dd(role, fmt(" closing:\ncode: %s\nreason: %q", code, data))
+
+    local ok, err = ws:send_close(code, data)
+    if not ok then
+        log(ngx.ERR, "failed sending close frame to ", role, ": ", err)
+    end
+end
+
+
+local function close(self, role, code, data, peer_code, peer_data)
+    local self_ws, peer_ws
+    local self_state = role .. "_state"
+    local peer
+
+    if role == "client" then
+        self_ws = self.server
+        peer_ws = self.client
+        peer = "upstream"
+    else
+        -- role == "upstream"
+        self_ws = self.client
+        peer_ws = self.server
+        peer = "client"
+    end
+
+    send_close_frame(self, self_ws, role, code, data)
+    self[self_state] = _STATES.CLOSING
+    send_close_frame(self, peer_ws, peer, peer_code, peer_data)
+end
+
+
 local function forwarder(self, ctx)
     local role = ctx.role
     local buf = ctx.buf
     local self_ws, peer_ws
     local self_state, peer_state
     local frame_typ
+    local frame_size, frame_count = 0, 0
     local on_frame = self.on_frame
+    local max_frame_size = self.max_frame_size
+    local max_fragments = self.max_fragments
 
     self_state = role .. "_state"
 
@@ -208,6 +260,31 @@ local function forwarder(self, ctx)
                                or typ == "binary"
                                or typ == "continuation"
 
+            -- limits
+
+            if data_frame then
+                frame_size = frame_size + #data
+
+                if max_frame_size and frame_size > max_frame_size then
+                    log(ngx.INFO, fmt("%s frame size (%s) exceeds limit, closing",
+                                      role, frame_size))
+                    close(self, role, 1009, "Payload Too Large", 1001, "")
+
+                    return role
+                end
+
+                frame_count = frame_count + 1
+
+                if max_fragments and frame_count > max_fragments then
+                    log(ngx.INFO, fmt("%s frame count (%s) exceeds limit, closing",
+                                      role, frame_count))
+                    close(self, role, 1009, "Payload Too Large", 1001, "")
+
+                    return role
+                end
+            end
+
+
             -- fragmentation
 
             if self.aggregate_fragments and data_frame then
@@ -283,6 +360,12 @@ local function forwarder(self, ctx)
                                          role, err))
                         -- continue
                     end
+                end
+
+
+                if data_frame then
+                    frame_size = 0
+                    frame_count = 0
                 end
             end
 

@@ -37,21 +37,31 @@ our $HttpConfig = qq{
                     return ngx.exit(444)
                 end
 
-                local data, typ, err = wb:recv_frame()
-                if not data then
-                    ngx.log(ngx.ERR, "failed receiving frame: ", err)
-                    return ngx.exit(444)
-                end
+                local once = not ngx.var.arg_repeat
 
-                ngx.log(ngx.INFO, "frame type: ", typ,
-                                  ", payload: \\"", data,
-                                  "\\"")
+                repeat
+                    local data, typ, err = wb:recv_frame()
+                    if not data then
+                        ngx.log(ngx.ERR, "failed receiving frame: ", err)
+                        return ngx.exit(444)
+                    end
 
-                local bytes, err = wb:send_text(data)
-                if not bytes then
-                    ngx.log(ngx.ERR, "failed sending frame: ", err)
-                    return ngx.exit(444)
-                end
+                    ngx.log(ngx.INFO, "frame type: ", typ,
+                              ", payload: \\"", data,
+                              "\\"")
+
+                    local bytes, err
+                    if typ == "close" then
+                        bytes, err = wb:send_close(err, data)
+                    else
+                        bytes, err = wb:send_text(data)
+                    end
+
+                    if not bytes then
+                        ngx.log(ngx.ERR, "failed sending frame: ", err)
+                        return ngx.exit(444)
+                    end
+                until typ == "close" or once
             }
         }
 
@@ -65,19 +75,24 @@ our $HttpConfig = qq{
                     return ngx.exit(444)
                 end
 
-                local data, typ, err = wb:recv_frame()
-                if not data then
-                    ngx.log(ngx.ERR, "failed receiving frame: ", err)
-                    return ngx.exit(444)
-                end
+                local once = not ngx.var.arg_repeat
 
-                ngx.log(ngx.INFO, "frame type: ", typ, ", payload: \\"", data, "\\"")
+                repeat
+                    local data, typ, err = wb:recv_frame()
+                    if not data then
+                        ngx.log(ngx.ERR, "failed receiving frame: ", err)
+                        return ngx.exit(444)
+                    end
 
-                local bytes, err = wb:send_pong("heartbeat server")
-                if not bytes then
-                    ngx.log(ngx.ERR, "failed sending frame: ", err)
-                    return ngx.exit(444)
-                end
+                    ngx.log(ngx.INFO, "frame type: ", typ,
+                            ", payload: \\"", data, "\\"")
+
+                    local bytes, err = wb:send_pong("heartbeat server")
+                    if not bytes then
+                        ngx.log(ngx.ERR, "failed sending frame: ", err)
+                        return ngx.exit(444)
+                    end
+                until typ == "close" or once
             }
         }
     }
