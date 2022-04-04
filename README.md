@@ -1,6 +1,7 @@
 # lua-resty-websocket-proxy
 
-Reverse-proxying of websocket frames.
+Reverse-proxying of websocket frames with in-flight inspection/update/drop and
+frame aggregation support.
 
 Resources:
 
