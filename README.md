@@ -9,9 +9,18 @@ Resources:
 
 # Table of Contents
 
+- [Status](#status)
 - [Synopsis](#synopsis)
 - [Limitations](#limitations)
 - [TODO](#todo)
+
+# Status
+
+This library is usable although still under active development.
+
+The Lua API may change without notice.
+
+[Back to TOC](#table-of-contents)
 
 # Synopsis
 
