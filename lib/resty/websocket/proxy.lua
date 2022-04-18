@@ -307,7 +307,7 @@ function _M:connect_upstream(uri, opts)
 
     local ok, err, res = self.client:connect(uri, opts)
     if not ok then
-        return nil, err
+        return nil, err, res
     end
 
     self:dd("connected to \"", uri, "\" upstream")

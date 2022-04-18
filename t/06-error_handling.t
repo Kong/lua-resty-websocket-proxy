@@ -84,3 +84,64 @@ SSL_do_handshake() failed
 failed connecting to upstream: ssl handshake failed: handshake failed
 --- no_error_log
 runtime error
+
+
+
+=== TEST 2: connect_upstream() returns response header for non-101 http response
+--- http_config eval: $t::Tests::HttpConfig
+--- config
+    location /upstream {
+        return 403;
+    }
+
+    location /proxy {
+        content_by_lua_block {
+            local proxy = require "resty.websocket.proxy"
+
+            local wp, err = proxy.new()
+            if not wp then
+                ngx.log(ngx.ERR, "failed creating proxy: ", err)
+                return ngx.exit(444)
+            end
+
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/upstream"
+            local ok, err, res = wp:connect_upstream(uri)
+            if ok then
+                ngx.log(ngx.ERR, "expected connect_upstream() to fail")
+                return ngx.exit(444)
+            end
+
+            if not res then
+                ngx.log(ngx.ERR, "expected response body to be returned")
+                return ngx.exit(444)
+            end
+
+            ngx.log(ngx.NOTICE, "response: ", res)
+
+            ngx.status = 403
+            ngx.say(res)
+        }
+    }
+
+    location /t {
+        content_by_lua_block {
+            local client = require "resty.websocket.client"
+            local wb = assert(client:new())
+            local uri = "ws://127.0.0.1:" .. ngx.var.server_port .. "/proxy"
+
+            local ok, err = wb:connect(uri)
+            if ok then
+                ngx.log(ngx.ERR, "expected client:connect() to fail")
+                return ngx.exit(444)
+            end
+
+            ngx.say(err)
+        }
+    }
+--- response_body
+unexpected HTTP response code: 403
+--- grep_error_log eval: qr/\[lua\].*/
+--- grep_error_log_out eval
+qr/response: HTTP\/1\.1 403 Forbidden/
+--- no_error_log
+[error]
