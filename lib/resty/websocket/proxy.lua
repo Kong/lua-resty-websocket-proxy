@@ -14,6 +14,10 @@ local sub = string.sub
 local gsub = string.gsub
 local find = string.find
 local log = ngx.log
+local now = ngx.now
+local spawn = ngx.thread.spawn
+local wait = ngx.thread.wait
+local kill = ngx.thread.kill
 
 
 local _DEBUG_PAYLOAD_MAX_LEN = 24
@@ -21,6 +25,7 @@ local _STATES = {
     INIT = 1,
     ESTABLISHED = 2,
     CLOSING = 3,
+    CLOSED = 4,
 }
 
 local _TYP2OPCODE = {
@@ -31,6 +36,9 @@ local _TYP2OPCODE = {
     ["ping"] = 0x9,
     ["pong"] = 0xa,
 }
+
+local LINGERING_TIME = 30000
+local LINGERING_TIMEOUT = 5000
 
 
 local _M = {
@@ -57,6 +65,22 @@ function _M.new(opts)
         error("opts.recv_timeout must be a number", 2)
     end
 
+    if opts.lingering_timeout ~= nil and type(opts.lingering_timeout) ~= "number" then
+        error("opts.lingering_timeout must be a number", 2)
+    end
+
+    if opts.lingering_time ~= nil and type(opts.lingering_time) ~= "number" then
+        error("opts.lingering_time must be a number", 2)
+    end
+
+    if opts.lingering_time and
+       opts.lingering_timeout and
+       opts.lingering_timeout > opts.lingering_time
+    then
+        error("opts.lingering_time must be > opts.lingering_timeout", 2)
+    end
+
+
     -- TODO: provide a means of passing options through to the
     -- resty.websocket.client constructor (like `max_payload_len`)
     local client, err = ws_client:new()
@@ -70,6 +94,8 @@ function _M.new(opts)
         upstream_uri = nil,
         on_frame = opts.on_frame,
         recv_timeout = opts.recv_timeout,
+        lingering_timeout = opts.lingering_timeout,
+        lingering_time = opts.lingering_time,
         aggregate_fragments = opts.aggregate_fragments,
         debug = opts.debug,
         client_state = _STATES.INIT,
@@ -97,6 +123,14 @@ local function forwarder(self, ctx)
     local frame_typ
     local on_frame = self.on_frame
 
+    -- for the sake of consistency we accept timeout args in milliseconds, but
+    -- lingering_time is measured against ngx.now(), so convert it back to
+    -- seconds
+    local lingering_time = (self.lingering_time or LINGERING_TIME) / 1000
+    local lingering_timeout = self.lingering_timeout or LINGERING_TIMEOUT
+
+    local recv_timeout = self.recv_timeout
+
     self_state = role .. "_state"
 
     --assert(self[self_state] == _STATES.ESTABLISHED)
@@ -114,12 +148,26 @@ local function forwarder(self, ctx)
     end
 
     while true do
-        if self[peer_state] == _STATES.CLOSING then
-            return
+        if self[self_state] == _STATES.CLOSING then
+            return role
+
+        elseif self[peer_state] == _STATES.CLOSED then
+            log(ngx.INFO, role, " exiting due to peer closure")
+            self[self_state] = _STATES.CLOSED
+            return role
+
+        elseif self[peer_state] == _STATES.CLOSING then
+            if (now() - self.close_sent) > lingering_time then
+                log(ngx.INFO, "closing due to linger time")
+                self[self_state] = _STATES.CLOSED
+                return role, "linger expired"
+            end
+
+            recv_timeout = lingering_timeout
         end
 
-        if self.recv_timeout then
-            self_ws:set_timeout(self.recv_timeout)
+        if recv_timeout then
+            self_ws:set_timeout(recv_timeout)
         end
 
         self:dd(role, " receiving frame...")
@@ -127,18 +175,28 @@ local function forwarder(self, ctx)
         local data, typ, err = self_ws:recv_frame()
         if not data then
             if find(err, "timeout", 1, true) then
+                if self[peer_state] == _STATES.CLOSING then
+                    log(ngx.INFO, role, "timed out while lingering, closing")
+                    return role, "linger timeout"
+                end
+
                 log(ngx.INFO, fmt("timeout receiving frame from %s, reopening",
                                   role))
                 -- continue
 
             elseif find(err, "closed", 1, true) then
-                self[self_state] = _STATES.CLOSING
+                self[self_state] = _STATES.CLOSED
+                return role
+
+            elseif find(err, "client aborted", 1, true) then
+                log(ngx.WARN, role, " aborted connection, exiting")
+                self[self_state] = _STATES.CLOSED
                 return role
 
             else
                 log(ngx.ERR, fmt("failed receiving frame from %s: %s",
                                  role, err))
-                self[self_state] = _STATES.CLOSING
+                self[self_state] = _STATES.CLOSED
                 return role, err
             end
         end
@@ -273,7 +331,8 @@ local function forwarder(self, ctx)
                                       data)
 
                         bytes, err = peer_ws:send_close(code, data)
-
+                        self[self_state] = _STATES.CLOSING
+                        self.close_sent = self.close_sent or now()
                     else
                         bytes, err = peer_ws:send_frame(fin, opcode, data)
                     end
@@ -307,7 +366,7 @@ function _M:connect_upstream(uri, opts)
 
     local ok, err, res = self.client:connect(uri, opts)
     if not ok then
-        return nil, err
+        return nil, err, res
     end
 
     self:dd("connected to \"", uri, "\" upstream")
@@ -365,43 +424,60 @@ function _M:execute()
         return nil, "upstream connection not established"
     end
 
-    self.co_client = ngx.thread.spawn(forwarder, self, {
+    self.co_client = spawn(forwarder, self, {
         role = "client",
         buf = new_tab(0, 0),
     })
 
-    self.co_server = ngx.thread.spawn(forwarder, self, {
+    self.co_server = spawn(forwarder, self, {
         role = "upstream",
         buf = new_tab(0, 0),
     })
 
-    local ok, res, err = ngx.thread.wait(self.co_client, self.co_server)
+    local ok, res, err = wait(self.co_client, self.co_server)
     if not ok then
         log(ngx.ERR, "failed to wait for websocket proxy threads: ", err)
 
     elseif res == "client" then
-        --assert(self.client_state == _STATES.CLOSING)
+        --assert(self.client_state == _STATES.CLOSING
+        --       or self.client_state == _STATES.CLOSED)
 
         self:dd(res, " thread terminated, killing server thread")
 
-        ngx.thread.kill(self.co_server)
+        if self.client_state == _STATES.CLOSING then
+            wait(self.co_server)
+
+        elseif self.client_state == _STATES.CLOSED then
+            self.client:send_close(1001)
+        end
+
+        kill(self.co_server)
 
         self:dd("closing \"", self.upstream_uri, "\" upstream websocket")
 
         self.client:close()
 
     elseif res == "upstream" then
-        --assert(self.upstream_state == _STATES.CLOSING)
+        --assert(self.upstream_state == _STATES.CLOSING
+        --       or self.upstream_state == _STATES.CLOSED)
 
         self:dd(res, " thread terminated, killing client thread")
 
-        ngx.thread.kill(self.co_client)
+        if self.upstream_state == _STATES.CLOSING then
+            wait(self.co_client)
+
+        elseif self.upstream_state == _STATES.CLOSED then
+            self.server:send_close(1001)
+        end
+
+        kill(self.co_client)
     end
 
     self.co_client = nil
     self.co_server = nil
     self.client_state = _STATES.INIT
     self.upstream_state = _STATES.INIT
+    self.close_sent = nil
 
     if err then
         return nil, err
