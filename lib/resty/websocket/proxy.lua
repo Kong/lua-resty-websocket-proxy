@@ -57,18 +57,32 @@ function _M.new(opts)
         error("opts.recv_timeout must be a number", 2)
     end
 
-    if opts.max_frame_size ~= nil
-       and (type(opts.max_frame_size) ~= "number"
-            or opts.max_frame_size < 1)
+    if opts.client_max_frame_size ~= nil
+       and (type(opts.client_max_frame_size) ~= "number"
+            or opts.client_max_frame_size < 1)
     then
-        error("opts.max_frame_size must be a number >= 1", 2)
+        error("opts.client_max_frame_size must be a number >= 1", 2)
     end
 
-    if opts.max_fragments ~= nil
-       and (type(opts.max_fragments) ~= "number"
-            or opts.max_fragments < 1)
+    if opts.client_max_fragments ~= nil
+       and (type(opts.client_max_fragments) ~= "number"
+            or opts.client_max_fragments < 1)
     then
-        error("opts.max_fragments must be a number >= 1", 2)
+        error("opts.client_max_fragments must be a number >= 1", 2)
+    end
+
+    if opts.upstream_max_frame_size ~= nil
+       and (type(opts.upstream_max_frame_size) ~= "number"
+            or opts.upstream_max_frame_size < 1)
+    then
+        error("opts.upstream_max_frame_size must be a number >= 1", 2)
+    end
+
+    if opts.upstream_max_fragments ~= nil
+       and (type(opts.upstream_max_fragments) ~= "number"
+            or opts.upstream_max_fragments < 1)
+    then
+        error("opts.upstream_max_fragments must be a number >= 1", 2)
     end
 
 
@@ -85,8 +99,10 @@ function _M.new(opts)
         upstream_uri = nil,
         on_frame = opts.on_frame,
         recv_timeout = opts.recv_timeout,
-        max_frame_size = opts.max_frame_size,
-        max_fragments = opts.max_fragments,
+        client_max_frame_size = opts.client_max_frame_size,
+        client_max_fragments = opts.client_max_fragments,
+        upstream_max_frame_size = opts.upstream_max_frame_size,
+        upstream_max_fragments = opts.upstream_max_fragments,
         aggregate_fragments = opts.aggregate_fragments,
         debug = opts.debug,
         client_state = _STATES.INIT,
@@ -146,8 +162,8 @@ local function forwarder(self, ctx)
     local frame_typ
     local frame_size, frame_count = 0, 0
     local on_frame = self.on_frame
-    local max_frame_size = self.max_frame_size
-    local max_fragments = self.max_fragments
+    local max_frame_size = ctx.max_frame_size
+    local max_fragments = ctx.max_fragments
 
     self_state = role .. "_state"
 
@@ -451,11 +467,15 @@ function _M:execute()
     self.co_client = ngx.thread.spawn(forwarder, self, {
         role = "client",
         buf = new_tab(0, 0),
+        max_frame_size = self.client_max_frame_size,
+        max_fragments = self.client_max_fragments,
     })
 
     self.co_server = ngx.thread.spawn(forwarder, self, {
         role = "upstream",
         buf = new_tab(0, 0),
+        max_frame_size = self.upstream_max_frame_size,
+        max_fragments = self.upstream_max_fragments,
     })
 
     local ok, res, err = ngx.thread.wait(self.co_client, self.co_server)

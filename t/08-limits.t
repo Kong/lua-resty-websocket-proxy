@@ -16,7 +16,7 @@ __DATA__
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
 
-            local wp, err = proxy.new({ max_frame_size = 10 })
+            local wp, err = proxy.new({ client_max_frame_size = 10 })
             if not wp then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
                 return ngx.exit(444)
@@ -65,7 +65,7 @@ qr/frame type: close, payload: ""/
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
 
-            local wp, err = proxy.new({ max_frame_size = 10 })
+            local wp, err = proxy.new({ upstream_max_frame_size = 10 })
             if not wp then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
                 return ngx.exit(444)
@@ -142,7 +142,7 @@ qr/frame type: close, payload: "Payload Too Large"/
             local proxy = require "resty.websocket.proxy"
 
             local wp, err = proxy.new({
-                max_frame_size = 10,
+                client_max_frame_size = 10,
                 aggregate_fragments = true,
             })
             if not wp then
@@ -234,7 +234,7 @@ qr/frame type: close, payload: ""/
 
             local wp, err = proxy.new({
                 aggregate_fragments = true,
-                max_frame_size = 10
+                upstream_max_frame_size = 10
             })
             if not wp then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
@@ -317,7 +317,10 @@ qr/frame type: close, payload: "Payload Too Large", code: 1009/
         content_by_lua_block {
             local proxy = require "resty.websocket.proxy"
 
-            local wp, err = proxy.new({ max_frame_size = 2 })
+            local wp, err = proxy.new({
+                    client_max_frame_size = 2,
+                    upstream_max_frame_size = 2,
+            })
             if not wp then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
                 return ngx.exit(444)
@@ -394,7 +397,7 @@ qr/.*?frame type: ping, payload: "test-1".*
             local proxy = require "resty.websocket.proxy"
 
             local wp, err = proxy.new({
-                max_fragments = 5,
+                client_max_fragments = 5,
                 aggregate_fragments = true,
                 debug = true,
             })
@@ -487,7 +490,7 @@ qr/frame type: close, payload: ""/
 
             local wp, err = proxy.new({
                 aggregate_fragments = true,
-                max_fragments = 5,
+                upstream_max_fragments = 5,
             })
             if not wp then
                 ngx.log(ngx.ERR, "failed creating proxy: ", err)
