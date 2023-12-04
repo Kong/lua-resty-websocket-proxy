@@ -37,8 +37,9 @@ http {
 
                 local proxy, err = ws_proxy.new({
                     aggregate_fragments = true,
-                    on_frame = function(origin, typ, payload, last, code)
-                        --  origin: [string]      "client" or "upstream"
+                    on_frame = function(proxy, role, typ, payload, last, code)
+                        --   proxy: [table]       the proxy instance
+                        --    role: [string]      "client" or "upstream"
                         --     typ: [string]      "text", "binary", "ping", "pong", "close"
                         -- payload: [string|nil]  payload if any
                         --    last: [boolean]     fin flag for fragmented frames; true if aggregate_fragments is on
