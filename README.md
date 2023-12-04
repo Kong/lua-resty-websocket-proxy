@@ -39,7 +39,7 @@ http {
                     aggregate_fragments = true,
                     on_frame = function(proxy, role, typ, payload, last, code)
                         --   proxy: [table]       the proxy instance
-                        --  origin: [string]      "client" or "upstream"
+                        --    role: [string]      "client" or "upstream"
                         --     typ: [string]      "text", "binary", "ping", "pong", "close"
                         -- payload: [string|nil]  payload if any
                         --    last: [boolean]     fin flag for fragmented frames; true if aggregate_fragments is on
