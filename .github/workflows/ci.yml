@@ -12,6 +12,7 @@ defaults:
 
 jobs:
   tests:
+    timeout-minutes: ${{ fromJSON(vars.GHA_DEFAULT_TIMEOUT) }}
     name: Tests
     runs-on: ${{ matrix.os }}
     strategy:
